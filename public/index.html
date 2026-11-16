@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TD Science Works</title>
+  <meta name="description" content="Портал научных работ учеников Tulkibas Daryn">
+  <link rel="icon" href="img/logo.png" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@600;700;800&display=swap&subset=cyrillic,cyrillic-ext" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar" id="topbar">
+    <a class="brand" href="#/home">
+      <img class="logo-img" src="img/logo.png" onerror="this.onerror=null;this.src='img/logo.svg'" alt="TD">
+      <span class="brand-text"><b>Tulkibas Daryn</b><small data-i18n="brandSub"></small></span>
+    </a>
+    <nav class="nav" id="nav"></nav>
+    <div class="top-right">
+      <div class="lang" id="lang">
+        <button data-lang="kz">ҚАЗ</button><button data-lang="ru">РУС</button><button data-lang="en">ENG</button>
+      </div>
+      <div id="userbox" class="userbox"></div>
+      <button class="burger" id="burger" aria-label="Menu">☰</button>
+    </div>
+  </header>
+  <main id="app"></main>
+  <footer class="footer" id="footer">
+    <span>© 2026 Tulkibas Daryn · <span data-i18n="brandSub"></span></span>
+  </footer>
+  <div class="toast" id="toast"></div>
+  <script src="i18n.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

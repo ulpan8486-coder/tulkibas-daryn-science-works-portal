@@ -1,0 +1,14 @@
+{
+  "name": "td-science-works-portal",
+  "version": "1.0.0",
+  "description": "Портал научных работ учеников Tulkibas Daryn",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}
