@@ -113,8 +113,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--t
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .grade-pick { border: 0; padding: 0; margin: 0; display: flex; gap: 8px; flex-wrap: wrap; }
 .grade-pick legend { font-weight: 600; font-size: .9rem; margin-bottom: 6px; padding: 0; }
-.chip-radio { cursor: pointer; }
-.chip-radio input { position: absolute; opacity: 0; pointer-events: none; }
+.chip-radio { cursor: pointer; position: relative; }
+.chip-radio input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 0; opacity: 0; pointer-events: none; }
 .chip-radio span { display: grid; place-items: center; width: 52px; height: 44px; border: 1px solid var(--line); border-radius: 12px; font-weight: 700; background: #fbfcfe; transition: all .15s; }
 .chip-radio input:checked + span { background: var(--navy); color: #fff; border-color: var(--navy); }
 .chip-radio input:focus-visible + span { box-shadow: 0 0 0 4px rgba(31,182,166,.25); }
