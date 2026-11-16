@@ -30,8 +30,12 @@ function seed() {
   const adminPassword = process.env.ADMIN_PASSWORD || crypto.randomBytes(6).toString('base64url');
   console.log('\n=== Создан администратор / Admin account created ===');
   console.log(`  email:    ${adminEmail}`);
-  console.log(`  password: ${adminPassword}`);
-  console.log('  (сохраните пароль — он показывается только один раз)\n');
+  if (process.env.ADMIN_PASSWORD) {
+    console.log('  password: (из переменной ADMIN_PASSWORD)\n');
+  } else {
+    console.log(`  password: ${adminPassword}`);
+    console.log('  (сохраните пароль — он показывается только один раз)\n');
+  }
 
   return {
     users: [{
