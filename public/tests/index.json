@@ -1,0 +1,98 @@
+[
+ {
+  "id": 1,
+  "title": "ФИЗИКА",
+  "file": "section-01.json",
+  "count": 60
+ },
+ {
+  "id": 2,
+  "title": "ТЕХНИКА",
+  "file": "section-02.json",
+  "count": 60
+ },
+ {
+  "id": 3,
+  "title": "ЖЕР ЖӘНЕ ҒАРЫШ ТУРАЛЫ ҒЫЛЫМДАР",
+  "file": "section-03.json",
+  "count": 60
+ },
+ {
+  "id": 4,
+  "title": "МАТЕМАТИКА",
+  "file": "section-04.json",
+  "count": 60
+ },
+ {
+  "id": 5,
+  "title": "ҚОЛДАНБАЛЫ МАТЕМАТИКА",
+  "file": "section-05.json",
+  "count": 60
+ },
+ {
+  "id": 6,
+  "title": "ИНФОРМАТИКА",
+  "file": "section-06.json",
+  "count": 60
+ },
+ {
+  "id": 7,
+  "title": "ЭКОНОМИКА",
+  "file": "section-07.json",
+  "count": 60
+ },
+ {
+  "id": 8,
+  "title": "БИОЛОГИЯ",
+  "file": "section-08.json",
+  "count": 60
+ },
+ {
+  "id": 9,
+  "title": "ХИМИЯ",
+  "file": "section-09.json",
+  "count": 60
+ },
+ {
+  "id": 10,
+  "title": "ҚОРШАҒАН ОРТАНЫ ҚОРҒАУ ЖӘНЕ АДАМ ДЕНСАУЛЫҒЫН САҚТАУ",
+  "file": "section-10.json",
+  "count": 60
+ },
+ {
+  "id": 11,
+  "title": "ТАРИХ",
+  "file": "section-11.json",
+  "count": 60
+ },
+ {
+  "id": 12,
+  "title": "АДАМ ЖӘНЕ ҚОҒАМ",
+  "file": "section-12.json",
+  "count": 60
+ },
+ {
+  "id": 13,
+  "title": "ӨЛКЕТАНУ",
+  "file": "section-13.json",
+  "count": 60
+ },
+ {
+  "id": 14,
+  "title": "ӘДЕБИЕТ",
+  "file": "section-14.json",
+  "count": 60
+ },
+ {
+  "id": 15,
+  "title": "ЭТНОМӘДЕНИЕТТАНУ",
+  "file": "section-15.json",
+  "count": 60
+ },
+ {
+  "id": 16,
+  "title": "ТІЛ БІЛІМІ",
+  "file": "section-16.json",
+  "count": 60
+ }
+]

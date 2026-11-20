@@ -1,5 +1,7 @@
-// TD Science Works Portal — zero-dependency Node.js server
-// Run: node server.js   (optional env: PORT, ADMIN_EMAIL, ADMIN_PASSWORD)
+// TD Science Works Portal — Node.js server
+// Run: node server.js
+// Env: PORT, ADMIN_EMAIL, ADMIN_PASSWORD,
+//      DATABASE_URL (Postgres; without it data is kept in data/db.json)
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -25,23 +27,49 @@ function verifyPassword(password, stored) {
 }
 const id = () => crypto.randomBytes(8).toString('hex');
 
-function seed() {
-  const adminEmail = (process.env.ADMIN_EMAIL || 'admin@td.kz').toLowerCase();
-  const adminPassword = process.env.ADMIN_PASSWORD || crypto.randomBytes(6).toString('base64url');
-  console.log('\n=== Создан администратор / Admin account created ===');
-  console.log(`  email:    ${adminEmail}`);
-  if (process.env.ADMIN_PASSWORD) {
-    console.log('  password: (из переменной ADMIN_PASSWORD)\n');
-  } else {
-    console.log(`  password: ${adminPassword}`);
-    console.log('  (сохраните пароль — он показывается только один раз)\n');
-  }
+const PROECO_TITLE = { ru: 'ProEco', kz: 'ProEco', en: 'ProEco' };
 
+// Makes sure the admin account exists. When ADMIN_PASSWORD is set, the admin's
+// password is synced to it on every start, so changing the variable on the
+// hosting and restarting always restores admin access.
+function ensureAdmin() {
+  const email = (process.env.ADMIN_EMAIL || 'admin@td.kz').trim().toLowerCase();
+  const envPass = (process.env.ADMIN_PASSWORD || '').trim();
+  let admin = db.users.find((u) => u.email === email);
+  if (!admin) {
+    const pass = envPass || crypto.randomBytes(6).toString('base64url');
+    admin = {
+      id: id(), email, firstName: 'Admin', lastName: 'TD', grade: null,
+      role: 'admin', password: hashPassword(pass), createdAt: new Date().toISOString(),
+    };
+    db.users.push(admin);
+    console.log('\n=== Создан администратор / Admin account created ===');
+    console.log(`  email:    ${email}`);
+    console.log(envPass ? '  password: (из переменной ADMIN_PASSWORD)\n'
+      : `  password: ${pass}\n  (сохраните пароль — он показывается только один раз)\n`);
+    return;
+  }
+  admin.role = 'admin';
+  if (envPass && !verifyPassword(envPass, admin.password)) {
+    admin.password = hashPassword(envPass);
+    console.log(`Пароль администратора ${email} обновлён из ADMIN_PASSWORD`);
+  }
+}
+
+// Small fixes for databases created by older versions
+function migrate() {
+  for (const k of ['users', 'events', 'applications', 'archive']) if (!Array.isArray(db[k])) db[k] = [];
+  if (!db.sessions || typeof db.sessions !== 'object') db.sessions = {};
+  for (const ev of db.events) {
+    if (/^ecopro/.test(ev.id) && /эко\s*про|eco\s*pro/i.test(ev.title.ru || '')) {
+      ev.title = ev.id === 'ecopro-2026' ? { ...PROECO_TITLE } : { ru: `${PROECO_TITLE.ru} ${ev.id.slice(-4)}`, kz: `${PROECO_TITLE.kz} ${ev.id.slice(-4)}`, en: `${PROECO_TITLE.en} ${ev.id.slice(-4)}` };
+    }
+  }
+}
+
+function seed() {
   return {
-    users: [{
-      id: id(), email: adminEmail, firstName: 'Admin', lastName: 'TD', grade: null,
-      role: 'admin', password: hashPassword(adminPassword), createdAt: new Date().toISOString(),
-    }],
+    users: [],
     sessions: {},
     events: [
       {
@@ -55,11 +83,11 @@ function seed() {
       },
       {
         id: 'ecopro-2026', grades: [7, 8], status: 'active', date: '2027-03-15',
-        title: { ru: 'Эко Про', kz: 'Эко Про', en: 'Eco Pro' },
+        title: { ...PROECO_TITLE },
         description: {
-          ru: 'Экологические проекты: природа, климат, переработка и устойчивое развитие (7–8 классы).',
-          kz: 'Экологиялық жобалар: табиғат, климат, қайта өңдеу және тұрақты даму (7–8 сынып).',
-          en: 'Environmental projects: nature, climate, recycling and sustainability (grades 7–8).',
+          ru: 'Республиканский конкурс экологических проектов: природа родного края, фото- и видеоработы, экоинициативы, «Чистый город» (7–8 классы).',
+          kz: 'Экологиялық жобалардың республикалық конкурсы: туған өлке табиғаты, фото-бейне жұмыстар, экобастамалар, «Таза қала» (7–8 сынып).',
+          en: 'National environmental project competition: native nature, photo and video works, eco initiatives, “Clean City” (grades 7–8).',
         },
       },
       {
@@ -102,27 +130,57 @@ function seed() {
   };
 }
 
+// The whole state is one JSON document. With DATABASE_URL it lives in a single
+// Postgres row (survives restarts on hosting without a disk); otherwise in a file.
 let db;
-function loadDb() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (fs.existsSync(DB_FILE)) {
-    db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+let pool = null;
+const DATABASE_URL = (process.env.DATABASE_URL || '').trim();
+
+async function loadDb() {
+  if (DATABASE_URL) {
+    const { Pool } = require('pg');
+    const local = /@(localhost|127\.0\.0\.1)[:/]/.test(DATABASE_URL);
+    const opts = { connectionString: DATABASE_URL, max: 3 };
+    if (!local && !/sslmode=/.test(DATABASE_URL)) opts.ssl = true;
+    pool = new Pool(opts);
+    await pool.query(`CREATE TABLE IF NOT EXISTS app_state (
+      id TEXT PRIMARY KEY, data JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
+    const r = await pool.query("SELECT data FROM app_state WHERE id = 'main'");
+    db = r.rows.length ? r.rows[0].data : seed();
+    console.log(r.rows.length ? 'База данных: Postgres (данные загружены)' : 'База данных: Postgres (новая база)');
   } else {
-    db = seed();
-    saveDb();
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    db = fs.existsSync(DB_FILE) ? JSON.parse(fs.readFileSync(DB_FILE, 'utf8')) : seed();
+    console.log(`База данных: файл ${path.relative(__dirname, DB_FILE)}`);
+    if (process.env.RENDER) console.warn('ВНИМАНИЕ: DATABASE_URL не задан — на Render данные сотрутся при перезапуске!');
   }
+  migrate();
+  ensureAdmin();
+  await saveDb();
 }
+
+// Writes are serialized; each call resolves once its snapshot is stored.
+let saveChain = Promise.resolve();
 function saveDb() {
-  const tmp = DB_FILE + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
-  fs.renameSync(tmp, DB_FILE);
+  const snapshot = JSON.stringify(db);
+  const job = saveChain.catch(() => {}).then(() => {
+    if (pool) {
+      return pool.query(`INSERT INTO app_state (id, data, updated_at) VALUES ('main', $1::jsonb, now())
+        ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`, [snapshot]);
+    }
+    const tmp = DB_FILE + '.tmp';
+    fs.writeFileSync(tmp, snapshot);
+    fs.renameSync(tmp, DB_FILE);
+  });
+  saveChain = job;
+  return job;
 }
 
 // ---------- helpers ----------
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'application/javascript; charset=utf-8',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.ico': 'image/x-icon',
-  '.webp': 'image/webp', '.json': 'application/json',
+  '.webp': 'image/webp', '.json': 'application/json; charset=utf-8', '.pdf': 'application/pdf',
 };
 
 function send(res, status, data) {
@@ -152,10 +210,10 @@ function currentUser(req) {
 const publicUser = (u) => u && ({ id: u.id, email: u.email, firstName: u.firstName, lastName: u.lastName, grade: u.grade, role: u.role });
 const str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 
-function startSession(res, user) {
+async function startSession(res, user) {
   const token = crypto.randomBytes(32).toString('hex');
   db.sessions[token] = user.id;
-  saveDb();
+  await saveDb();
   res.setHeader('Set-Cookie', `td_session=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${60 * 60 * 24 * 30}`);
 }
 
@@ -183,7 +241,7 @@ async function api(req, res, url) {
     if (db.users.some((u) => u.email === email)) return fail(res, 409, 'email_taken');
     const u = { id: id(), email, firstName, lastName, grade, role: 'student', password: hashPassword(password), createdAt: new Date().toISOString() };
     db.users.push(u);
-    startSession(res, u);
+    await startSession(res, u);
     return send(res, 201, { user: publicUser(u) });
   }
 
@@ -191,13 +249,13 @@ async function api(req, res, url) {
     const email = str(body.email, 120).toLowerCase();
     const u = db.users.find((x) => x.email === email);
     if (!u || typeof body.password !== 'string' || !verifyPassword(body.password, u.password)) return fail(res, 401, 'bad_credentials');
-    startSession(res, u);
+    await startSession(res, u);
     return send(res, 200, { user: publicUser(u) });
   }
 
   if (p === '/api/logout' && m === 'POST') {
     const token = getCookie(req, 'td_session');
-    if (token) { delete db.sessions[token]; saveDb(); }
+    if (token) { delete db.sessions[token]; await saveDb(); }
     res.setHeader('Set-Cookie', 'td_session=; HttpOnly; Path=/; Max-Age=0');
     return send(res, 200, { ok: true });
   }
@@ -228,7 +286,7 @@ async function api(req, res, url) {
       id: id(), userId: user.id, email: user.email, fullName, grade, eventId: ev.id,
       title, description, status: 'pending', createdAt: new Date().toISOString(),
     };
-    db.applications.push(a); saveDb();
+    db.applications.push(a); await saveDb();
     return send(res, 201, { application: a });
   }
 
@@ -257,7 +315,7 @@ async function api(req, res, url) {
         title: a.title, description: a.description, result: '', acceptedAt: a.reviewedAt,
       });
     }
-    saveDb();
+    await saveDb();
     return send(res, 200, { application: a });
   }
 
@@ -271,7 +329,7 @@ async function api(req, res, url) {
       eventId: str(body.eventId, 60), title, description: str(body.description, 4000), result: str(body.result, 300),
       acceptedAt: new Date().toISOString(),
     };
-    db.archive.push(item); saveDb();
+    db.archive.push(item); await saveDb();
     return send(res, 201, { item });
   }
 
@@ -284,10 +342,10 @@ async function api(req, res, url) {
       if ('title' in body && str(body.title, 200)) it.title = str(body.title, 200);
       if ('author' in body && str(body.author, 120)) it.author = str(body.author, 120);
       if ('description' in body) it.description = str(body.description, 4000);
-      saveDb();
+      await saveDb();
       return send(res, 200, { item: it });
     }
-    if (m === 'DELETE') { db.archive.splice(idx, 1); saveDb(); return send(res, 200, { ok: true }); }
+    if (m === 'DELETE') { db.archive.splice(idx, 1); await saveDb(); return send(res, 200, { ok: true }); }
   }
 
   if (p === '/api/admin/events' && m === 'POST') {
@@ -300,7 +358,7 @@ async function api(req, res, url) {
       id: id(), grades, status: body.status === 'past' ? 'past' : 'active', date: str(body.date, 20),
       title, description: { ru: str(d.ru, 1000), kz: str(d.kz, 1000), en: str(d.en, 1000) },
     };
-    db.events.push(ev); saveDb();
+    db.events.push(ev); await saveDb();
     return send(res, 201, { event: ev });
   }
 
@@ -308,7 +366,7 @@ async function api(req, res, url) {
     const ev = db.events.find((e) => e.id === mm[1]);
     if (!ev) return fail(res, 404, 'not_found');
     if (body.status === 'active' || body.status === 'past') ev.status = body.status;
-    saveDb();
+    await saveDb();
     return send(res, 200, { event: ev });
   }
 
@@ -323,6 +381,7 @@ function serveStatic(req, res, url) {
   if (!file.startsWith(PUBLIC_DIR)) { res.writeHead(403); return res.end(); }
   fs.readFile(file, (err, data) => {
     if (err) {
+      if (path.extname(rel)) { res.writeHead(404); return res.end('Not found'); }
       // SPA fallback
       return fs.readFile(path.join(PUBLIC_DIR, 'index.html'), (e2, html) => {
         if (e2) { res.writeHead(404); return res.end('Not found'); }
@@ -334,14 +393,17 @@ function serveStatic(req, res, url) {
   });
 }
 
-loadDb();
-http.createServer(async (req, res) => {
+const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   try {
     if (url.pathname.startsWith('/api/')) return await api(req, res, url);
     serveStatic(req, res, url);
   } catch (e) {
     console.error(e);
-    fail(res, 500, 'server_error');
+    if (!res.headersSent) fail(res, 500, 'server_error');
   }
-}).listen(PORT, () => console.log(`TD Science Works Portal → http://localhost:${PORT}`));
+});
+
+loadDb()
+  .then(() => server.listen(PORT, () => console.log(`TD Science Works Portal → http://localhost:${PORT}`)))
+  .catch((e) => { console.error('Не удалось загрузить базу данных:', e.message); process.exit(1); });

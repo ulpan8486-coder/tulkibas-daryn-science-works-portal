@@ -15,6 +15,9 @@ services:
         value: "20"
       - key: ADMIN_EMAIL
         value: admin@td.kz
-      # Render asks for this value when the Blueprint is created (not stored in git)
+      # Render asks for these values when the Blueprint is created (not stored in git)
       - key: ADMIN_PASSWORD
+        sync: false
+      # Postgres connection string (e.g. a free Neon database) — keeps data across restarts
+      - key: DATABASE_URL
         sync: false

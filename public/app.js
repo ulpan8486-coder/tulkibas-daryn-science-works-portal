@@ -77,7 +77,7 @@
     const nav = document.getElementById('nav');
     const ub = document.getElementById('userbox');
     if (authed && !bare) {
-      const links = [['home', 'navHome'], ['submit', 'navSubmit'], ['archive', 'navArchive']];
+      const links = [['home', 'navHome'], ['submit', 'navSubmit'], ['archive', 'navArchive'], ['rules', 'navRules'], ['tests', 'navTests']];
       if (state.user.role === 'admin') links.push(['admin', 'navAdmin']);
       nav.innerHTML = links.map(([r, k]) =>
         `<a href="#/${r}" class="${route === r ? 'active' : ''} ${r === 'submit' ? 'cta' : ''}">${t(k)}</a>`).join('');
@@ -89,6 +89,10 @@
         await api('/api/logout', { method: 'POST' }).catch(() => {});
         state.user = null; location.hash = '#/';
       };
+    } else if (!bare) {
+      // guest on a public page (rules)
+      nav.innerHTML = `<a href="#/rules" class="${route === 'rules' ? 'active' : ''}">${t('navRules')}</a>`;
+      ub.innerHTML = `<a class="btn-primary sm" href="#/login">${t('loginNav')}</a>`;
     } else { nav.innerHTML = ''; ub.innerHTML = ''; }
     nav.classList.remove('open');
   }
@@ -106,7 +110,10 @@
           <div class="features">
             ${[1, 2, 3].map((i) => `<div class="feature"><span class="fnum">0${i}</span><b>${t('heroF' + i + 't')}</b><span>${t('heroF' + i)}</span></div>`).join('')}
           </div>
-          <a class="btn-primary lg" href="${state.user ? '#/home' : '#/login'}">${t('start')} →</a>
+          <div class="hero-actions">
+            <a class="btn-primary lg" href="${state.user ? '#/home' : '#/login'}">${t('start')} →</a>
+            <a class="btn-glass lg" href="#/rules">${t('readRules')}</a>
+          </div>
         </div>
       </section>`;
   }
@@ -129,7 +136,8 @@
         <button class="btn-primary block" type="submit">${t('loginBtn')}</button>
       </form>
       <div class="auth-switch"><span class="muted">${t('noAccount')}</span>
-        <a class="btn-ghost block" href="#/register">${t('registerBtn')}</a></div>`);
+        <a class="btn-ghost block" href="#/register">${t('registerBtn')}</a>
+        <a class="sm" href="#/rules">${t('readRules')} →</a></div>`);
     document.getElementById('f').onsubmit = async (e) => {
       e.preventDefault();
       const fd = Object.fromEntries(new FormData(e.target));
@@ -429,14 +437,230 @@
     };
   }
 
+  // ---------- rules (public) ----------
+  function pageRules(params) {
+    const open = params.get('c');
+    $app.innerHTML = `<div class="container">
+      ${pageHeader(t('rulesTitle'), t('rulesSub'))}
+      <div class="rules-tabs">${RULES.map((r) => `<a href="#rule-${r.id}" class="rules-tab"><b>${esc(loc(r.title))}</b><span>${esc(loc(r.grades))}</span></a>`).join('')}</div>
+      ${RULES.map((r) => `
+        <section class="card rule" id="rule-${r.id}">
+          <div class="rule-head">
+            <div>
+              <span class="badge soft">${esc(loc(r.grades))}</span>
+              <h2>${esc(loc(r.title))}</h2>
+              <p class="muted">${esc(loc(r.lead))}</p>
+            </div>
+            <div class="rule-dl">
+              <a class="btn-primary sm" href="${esc(r.file)}" download>⬇ ${t('download')}</a>
+              <a class="btn-ghost sm" href="${esc(r.drive)}" target="_blank" rel="noopener">${t('downloadDrive')}</a>
+              <small class="muted">${t('docLang')}</small>
+            </div>
+          </div>
+          <div class="rule-blocks">
+            ${r.blocks.map((b) => `<div class="rule-block"><h3>${esc(loc(b.h))}</h3>
+              <ul>${(b[state.lang] || b.ru).map((li) => `<li>${esc(li)}</li>`).join('')}</ul></div>`).join('')}
+          </div>
+        </section>`).join('')}
+    </div>`;
+    $app.querySelectorAll('.rules-tab').forEach((a) => (a.onclick = (e) => {
+      e.preventDefault();
+      document.querySelector(a.getAttribute('href')).scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }));
+    if (open) document.getElementById('rule-' + open)?.scrollIntoView({ block: 'start' });
+  }
+
+  // ---------- practice tests ----------
+  let testTimer = null;
+  let testKeyHandler = null;
+  function stopTestTimer() {
+    if (testTimer) { clearInterval(testTimer); testTimer = null; }
+    if (testKeyHandler) { document.removeEventListener('keydown', testKeyHandler); testKeyHandler = null; }
+    document.querySelector('.modal-back')?.remove();
+  }
+  const sectionTitle = (id, fallback) => (window.TEST_SECTIONS[id] ? loc(window.TEST_SECTIONS[id]) : fallback);
+  const testKey = (id) => 'td_test_' + id;
+  function readJSON(k) { try { return JSON.parse(safeGet(k) || 'null'); } catch { return null; } }
+
+  async function pageTests() {
+    const index = await (await fetch('tests/index.json')).json();
+    $app.innerHTML = `<div class="container">
+      ${pageHeader(t('testsTitle'), t('testsSub'))}
+      <p class="tests-info">${t('testsInfo')}</p>
+      <div class="grid test-grid">
+        ${index.map((s) => {
+          const last = readJSON(testKey(s.id));
+          return `<button class="card test-card" data-id="${s.id}">
+            <span class="test-num">${String(s.id).padStart(2, '0')}</span>
+            <b>${esc(sectionTitle(s.id, s.title))}</b>
+            <span class="muted sm">${t('questionsN', { n: s.count })}</span>
+            ${last ? `<span class="last ${last.score * 2 >= last.max ? 'ok' : ''}">${t('lastResult', { s: last.score, m: last.max })}</span>` : ''}
+          </button>`;
+        }).join('')}
+      </div></div>`;
+    $app.querySelectorAll('.test-card').forEach((b) => (b.onclick = () => chooseMode(Number(b.dataset.id), index)));
+  }
+
+  function chooseMode(id, index) {
+    const s = index.find((x) => x.id === id);
+    const box = document.createElement('div');
+    box.className = 'modal-back';
+    box.innerHTML = `<div class="modal card" role="dialog" aria-modal="true">
+      <span class="test-num">${String(id).padStart(2, '0')}</span>
+      <h2>${esc(sectionTitle(id, s.title))}</h2>
+      <p class="muted">${t('chooseMode')}</p>
+      <button class="mode" data-mode="exam"><b>⏱ ${t('modeExam')}</b><span>${t('modeExamDesc')}</span></button>
+      <button class="mode" data-mode="practice"><b>✎ ${t('modePractice')}</b><span>${t('modePracticeDesc')}</span></button>
+      <button class="btn-ghost sm" data-close>${t('cancel')}</button>
+    </div>`;
+    document.body.appendChild(box);
+    const close = () => box.remove();
+    box.onclick = (e) => { if (e.target === box || e.target.hasAttribute('data-close')) close(); };
+    box.querySelectorAll('.mode').forEach((b) => (b.onclick = async () => {
+      close();
+      const data = await (await fetch(`tests/${s.file}`)).json();
+      startTest(data, b.dataset.mode);
+    }));
+  }
+
+  function startTest(data, mode) {
+    stopTestTimer();
+    const st = {
+      data, mode, idx: 0, answers: new Array(data.questions.length).fill(null),
+      endAt: mode === 'exam' ? Date.now() + data.timeMinutes * 60 * 1000 : null,
+    };
+    const total = data.questions.length;
+    const title = sectionTitle(data.id, data.title);
+
+    function render() {
+      const q = data.questions[st.idx];
+      const chosen = st.answers[st.idx];
+      const reveal = mode === 'practice' && chosen !== null;
+      const answered = st.answers.filter((a) => a !== null).length;
+      $app.innerHTML = `<div class="container test-run">
+        <div class="test-bar card">
+          <div><b>${esc(title)}</b><span class="muted sm"> · ${t(mode === 'exam' ? 'modeExam' : 'modePractice')}</span></div>
+          <div class="test-bar-right">
+            ${mode === 'exam' ? `<span class="timer" id="timer" title="${t('timeLeft')}"></span>` : ''}
+            <span class="muted sm">${t('answeredN', { n: answered, t: total })}</span>
+            <button class="btn-ghost sm" data-exit>${t('exitTest')}</button>
+          </div>
+        </div>
+        <div class="progress"><span style="width:${(answered / total) * 100}%"></span></div>
+        <article class="card question">
+          <p class="muted sm">${t('questionOf', { n: st.idx + 1, t: total })}</p>
+          <h2 class="q-text">${esc(q.q)}</h2>
+          <div class="options">
+            ${q.options.map((o, i) => {
+              let cls = '';
+              if (reveal) cls = i === q.answer ? 'correct' : i === chosen ? 'wrong' : 'dim';
+              else if (i === chosen) cls = 'chosen';
+              return `<button class="option ${cls}" data-i="${i}" ${reveal ? 'disabled' : ''}><span class="letter">${'ABCDE'[i]}</span><span>${esc(o)}</span></button>`;
+            }).join('')}
+          </div>
+          <div class="q-nav">
+            <button class="btn-ghost" data-prev ${st.idx === 0 ? 'disabled' : ''}>${t('prev')}</button>
+            ${st.idx < total - 1 ? `<button class="btn-primary" data-next>${t('next')}</button>` : `<button class="btn-primary" data-finish>${t('finish')}</button>`}
+          </div>
+        </article>
+        <div class="q-grid">${st.answers.map((a, i) => {
+          let cls = a !== null ? 'done' : '';
+          if (mode === 'practice' && a !== null) cls = a === data.questions[i].answer ? 'right' : 'bad';
+          return `<button class="${cls} ${i === st.idx ? 'cur' : ''}" data-go="${i}">${i + 1}</button>`;
+        }).join('')}</div>
+        <div class="finish-row"><button class="btn-danger" data-finish>${t('finish')}</button></div>
+      </div>`;
+
+      $app.querySelectorAll('.option').forEach((b) => (b.onclick = () => {
+        if (reveal) return;
+        st.answers[st.idx] = Number(b.dataset.i);
+        render();
+      }));
+      $app.querySelector('[data-prev]').onclick = () => { st.idx--; render(); };
+      $app.querySelector('[data-next]')?.addEventListener('click', () => { st.idx++; render(); });
+      $app.querySelectorAll('[data-finish]').forEach((b) => (b.onclick = () => {
+        const left = st.answers.filter((a) => a === null).length;
+        if (left && !confirm(t('confirmFinish', { n: left }))) return;
+        finish();
+      }));
+      $app.querySelectorAll('[data-go]').forEach((b) => (b.onclick = () => { st.idx = Number(b.dataset.go); render(); }));
+      $app.querySelector('[data-exit]').onclick = () => {
+        if (st.answers.some((a) => a !== null) && !confirm(t('confirmExit'))) return;
+        stopTestTimer(); pageTests();
+      };
+      tick();
+    }
+
+    function tick() {
+      if (!st.endAt) return;
+      const left = Math.max(0, st.endAt - Date.now());
+      const el = document.getElementById('timer');
+      if (el) {
+        const h = Math.floor(left / 3600000); const m = Math.floor((left % 3600000) / 60000); const s = Math.floor((left % 60000) / 1000);
+        el.textContent = `⏱ ${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+        el.classList.toggle('low', left < 5 * 60 * 1000);
+      }
+      if (left === 0) { toast(t('timeUp'), 'warn'); finish(); }
+    }
+
+    function onKey(e) {
+      if (!document.querySelector('.test-run') || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.target instanceof Element && e.target.matches('input, textarea, select')) return;
+      const k = e.key.toUpperCase();
+      const i = { 1: 0, 2: 1, 3: 2, 4: 3, A: 0, B: 1, C: 2, D: 3 }[k];
+      if (i !== undefined) document.querySelector(`.option[data-i="${i}"]`)?.click();
+      else if (e.key === 'ArrowRight' && st.idx < total - 1) { st.idx++; render(); }
+      else if (e.key === 'ArrowLeft' && st.idx > 0) { st.idx--; render(); }
+    }
+
+    function finish() {
+      stopTestTimer();
+      const correct = data.questions.filter((q, i) => st.answers[i] === q.answer).length;
+      const max = total * data.pointsPerQuestion; const score = correct * data.pointsPerQuestion;
+      const pct = Math.round((score / max) * 100);
+      const level = pct >= 90 ? 'lvl1' : pct >= 70 ? 'lvl2' : pct >= 50 ? 'lvl3' : 'lvl4';
+      safeSet(testKey(data.id), JSON.stringify({ score, max, date: new Date().toISOString() }));
+      const wrong = data.questions.map((q, i) => ({ q, i, a: st.answers[i] })).filter((x) => x.a !== x.q.answer);
+      $app.innerHTML = `<div class="container test-run">
+        <div class="card result ${pct >= 50 ? 'pass' : 'fail'}">
+          <p class="muted">${esc(title)} · ${t('resultTitle')}</p>
+          <div class="result-score">${pct}%</div>
+          <h2>${t('scoreOf', { s: score, m: max })}</h2>
+          <p>${t('correctN', { n: correct, t: total })}</p>
+          <div class="progress big"><span style="width:${pct}%"></span><i style="left:50%"></i></div>
+          <p class="verdict">${t(pct >= 50 ? 'passed' : 'notPassed')}</p>
+          <p class="muted">${t(level)}</p>
+          <div class="admin-row center"><button class="btn-primary" data-retry>${t('retry')}</button><button class="btn-ghost" data-back>${t('backToSections')}</button></div>
+        </div>
+        <h2 class="review-title">${t('review')} (${wrong.length})</h2>
+        ${wrong.length ? wrong.map((x) => `<article class="card review-item">
+          <p class="muted sm">${t('questionOf', { n: x.i + 1, t: total })}</p>
+          <p class="q-text sm-q">${esc(x.q.q)}</p>
+          <p class="ans wrong-ans">${t('yourAnswer')}: <b>${x.a === null ? t('noAnswer') : `${'ABCDE'[x.a]}) ${esc(x.q.options[x.a])}`}</b></p>
+          <p class="ans right-ans">${t('correctAnswer')}: <b>${'ABCDE'[x.q.answer]}) ${esc(x.q.options[x.q.answer])}</b></p>
+        </article>`).join('') : `<p class="empty">${t('noMistakes')}</p>`}
+      </div>`;
+      $app.querySelector('[data-retry]').onclick = () => startTest(data, mode);
+      $app.querySelector('[data-back]').onclick = pageTests;
+      window.scrollTo(0, 0);
+    }
+
+    testKeyHandler = onKey;
+    document.addEventListener('keydown', onKey);
+    if (st.endAt) testTimer = setInterval(tick, 1000);
+    render();
+    window.scrollTo(0, 0);
+  }
+
   // ---------- router ----------
-  const PUBLIC = ['', 'login', 'register'];
+  const PUBLIC = ['', 'login', 'register', 'rules'];
   async function router() {
     const raw = location.hash.replace(/^#\/?/, '');
     const [route, qs] = raw.split('?');
     const params = new URLSearchParams(qs || '');
     if (!PUBLIC.includes(route) && !state.user) { location.hash = '#/login'; return; }
     if ((route === 'login' || route === 'register') && state.user) { location.hash = '#/home'; return; }
+    stopTestTimer();
     renderChrome(route);
     applyStaticI18n();
     window.scrollTo(0, 0);
@@ -449,6 +673,8 @@
         case 'submit': await pageSubmit(params); break;
         case 'archive': await pageArchive(); break;
         case 'admin': await pageAdmin(); break;
+        case 'rules': pageRules(params); break;
+        case 'tests': await pageTests(); break;
         default: location.hash = state.user ? '#/home' : '#/';
       }
     } catch (err) {
